@@ -120,6 +120,33 @@ impl<W: Write> ArrowWriter<W> {
         })
     }
 
+    /// Try to create a new Arrow writer without serialized arrow metadata.
+    ///
+    /// The writer will fail if:
+    ///  * a `SerializedFileWriter` cannot be created from the ParquetWriter
+    ///  * the Arrow schema contains unsupported datatypes such as Unions
+    pub fn try_new_without_arrow_metadata(
+        writer: W,
+        arrow_schema: SchemaRef,
+        props: Option<WriterProperties>,
+    ) -> Result<Self> {
+        let schema = arrow_to_parquet_schema(&arrow_schema)?;
+        let props = props.unwrap_or_else(|| WriterProperties::builder().build());
+
+        let max_row_group_size = props.max_row_group_size();
+
+        let file_writer =
+            SerializedFileWriter::new(writer, schema.root_schema_ptr(), Arc::new(props))?;
+
+        Ok(Self {
+            writer: file_writer,
+            buffer: vec![Default::default(); arrow_schema.fields().len()],
+            buffered_rows: 0,
+            arrow_schema,
+            max_row_group_size,
+        })
+    }
+
     /// Returns metadata for any flushed row groups
     pub fn flushed_row_groups(&self) -> &[RowGroupMetaDataPtr] {
         self.writer.flushed_row_groups()
